@@ -1,0 +1,259 @@
+#define SIZE_REQ_PROGRAM        650000
+
+#define APP_NAME                "Expression Calculator"
+#define PROGRAM_GROUP_NAME      "Expression Calculator"
+#define APPBASE_PATH            "Expression Calculator\\"
+#define COMPANY_NAME            "Vestris Inc."
+#define PRODUCT_NAME            "Expression Calculator"
+#define PRODUCT_VERSION         "2.43"
+#define PRODUCT_KEY             "excalc.exe"
+#define UNINSTALL_KEY           "ExpressionCalculator"
+#define BASE_REGISTRYNT         "Software\\Microsoft\\Windows NT\\CurrentVersion\\App Paths\\"
+#define BASE_REGISTRY95         "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\"
+
+declare
+
+// Global variable declarations.
+STRING  APPBASE_DIR95;
+STRING  svGrp, szMsg, szFileSet, szTitle, szAppPath, szAppSharedDir;
+STRING  szProgram, szTemp, svUninstLogFile, szRegKey;
+STRING  svMainDirectory[ _MAX_STRING ];
+BOOL    bSpaceOk, bReshowSetupType;
+NUMBER  nResult, nStatusId, nType;
+BOOL    bWinNT;
+STRING  szKey,svState;
+
+// Function declarations.
+prototype SetupScreen();
+prototype CheckRequirements();
+prototype CheckSpaceRequirements(string);
+prototype GetProgDir();
+
+program
+
+StartHere:
+          
+  Disable( BACKGROUND );
+
+  // Set up the installation screen.
+  SetupScreen();
+
+  // Set installation info., which is required for registry entries.
+  InstallationInfo( COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION, PRODUCT_KEY );
+
+  // Create a Welcome dialog.
+
+  // Test target system proper configuration.
+  CheckRequirements();
+  GetProgDir();
+
+  // Ask user for a destination location for the installation.
+
+GetTargetDirectory:
+  Disable( BACKBUTTON );
+  svMainDirectory = APPBASE_DIR95 ^ APPBASE_PATH;
+
+  szMsg = "";
+  AskDestPath( "", szMsg, svMainDirectory, 0 );
+  Enable(BACKBUTTON);
+
+  szAppSharedDir = svMainDirectory ^ "System";
+
+  // Check to see if target system meets space requirements.
+  bSpaceOk = CheckSpaceRequirements(svMainDirectory);
+
+  // Ask user to try again if not enough space available.
+  if (bSpaceOk = FALSE) then
+     goto GetTargetDirectory;
+  endif;
+
+FolderSelection:
+                
+  if ( bWinNT ) then
+     svGrp = PROGRAM_GROUP_NAME;
+     // Allow user to modify folder name.
+     if ( SelectFolder( "", svGrp, svGrp ) = BACK ) then
+        goto GetTargetDirectory;
+     endif;
+  endif;
+     
+FileTransferSetup: 
+
+  // Prepare InstallShield to record deinstallation information. 
+  DeinstallStart( svMainDirectory, svUninstLogFile, UNINSTALL_KEY, 0 );
+  RegDBSetItem( REGDB_UNINSTALL_NAME, APP_NAME );
+     
+  // Define the "General" file set.
+  szFileSet = "General";
+  TARGETDIR = svMainDirectory;
+
+  FileSetBeginDefine( szFileSet );
+
+  SetStatusWindow( -1, "Copying program files..." );
+     
+  CompressGet( "data.z", "*.*", COMP_NORMAL );
+
+  TARGETDIR = svMainDirectory + "\\docs";
+     
+  CompressGet( "data.z", "docs\\*.*", COMP_NORMAL );
+                      
+  TARGETDIR = svMainDirectory + "\\docs\\images";
+     
+  CompressGet( "data.z", "docs\\images\\*.*", COMP_NORMAL );
+                      
+  FileSetEndDefine( szFileSet );
+
+DoFileTransfer:       
+                      
+  // Set up progress indicator and information gauge.
+  Enable( STATUSDLG );
+  StatusUpdate( ON, 90 );
+
+  // Perform the file set.
+  nResult = FileSetPerformEz( szFileSet, 0 );
+
+  switch (nResult)     
+     case FS_DONE: // Successful completion.       
+     case FS_CREATEDIR: // Create directory error.         
+       MessageBox( "Unable to create a directory under " + TARGETDIR + "." +
+                   "Please check write access to this directory.", SEVERE );
+       abort;
+     default: // Group all other errors under default label.                                      
+       NumToStr( szTemp, nResult ); 
+       MessageBox("General file transfer error." +
+                  "Please check your target location and try again." +
+                  "\n\n Error Number:" + szTemp, SEVERE );
+       abort;                                      
+  endswitch;
+  Disable( STATUSDLG );
+
+  // Create program groups (folders) and icons.
+
+CreateFolderIcons:
+
+  SetStatusWindow( 95, "Creating Folder and Icons...." );
+
+  if ( bWinNT ) then
+   
+    CreateProgramFolder( svGrp );
+    ShowProgramFolder( svGrp, SW_SHOW );
+    LongPathToShortPath( svMainDirectory );
+    Delay(1);
+  
+  endif;
+
+  TARGETDIR = svMainDirectory;
+
+  szProgram = TARGETDIR ^ "EXCALC.EXE";
+
+  if ( bWinNT ) then
+     AddFolderIcon( svGrp, APP_NAME, szProgram, TARGETDIR, "", 0, "", REPLACE );
+  else
+     LongPathToQuote( szProgram, TRUE );  
+     AddFolderIcon("", APP_NAME, szProgram, TARGETDIR, "", 0, "", REPLACE );
+  endif;
+
+  Delay( 1 );
+
+  szProgram = WINDIR ^ "UNINST.EXE";
+  LongPathToShortPath( szProgram );
+  LongPathToShortPath( svUninstLogFile );
+
+  AddFolderIcon(svGrp, "Uninstall", szProgram + " -f" + svUninstLogFile, WINDIR, "", 0, "", REPLACE );
+
+  Delay( 1 );
+
+  // Register Icon
+    
+  szProgram = TARGETDIR ^ "REGISTER.EXE";
+  LongPathToShortPath( szProgram );
+  AddFolderIcon(svGrp, "Register", szProgram, TARGETDIR, "", 0, "", REPLACE );
+    
+  Delay( 1 );
+
+  szProgram = TARGETDIR ^ "docs\\index.html";
+  LongPathToShortPath( szProgram );
+  AddFolderIcon(svGrp, "Docs and Reference", szProgram, TARGETDIR, "", 0, "", REPLACE );
+    
+  Delay( 1 );
+
+  // Announce setup complete
+  
+  SetStatusWindow( 100, "Installation complete." );
+  
+  szMsg = "Setup is complete.\nFor information about this software, please visit http://www.vestris.com/.";
+  MessageBeep( 0 );
+  MessageBox( szMsg, INFORMATION );
+
+  exit;
+
+function SetupScreen()
+begin
+   Enable( INDVFILESTATUS );
+   SetTitle( APP_NAME + " " + PRODUCT_VERSION + " Installation", 28, YELLOW );
+   SetTitle( "Setup", 0, BACKGROUNDCAPTION ); // Caption bar text.
+   Enable( BACKGROUND );
+end;
+
+function CheckRequirements()
+  number  nvDx, nvDy;
+  number nvResult;
+  STRING szResult;
+begin
+   
+   bWinNT = TRUE;
+   // Determine if target system uses NT or Windows 95.
+      GetSystemInfo( WINMAJOR , nvResult, szResult );
+   if (nvResult = 4) then
+      bWinNT = FALSE; // Running Windows 95.
+   endif;
+   
+   if GetEnvVar("OS",szResult)=0 then 
+      if szResult="Windows_NT" then
+         bWinNT=TRUE;
+      endif;
+      if szResult="Windows_95" then
+         bWinNT=FALSE;
+      endif;
+   endif;
+
+   // Check screen resolution.
+   GetExtents( nvDx, nvDy );
+   if (nvDy < 480) then
+      MessageBox( "This program requires VGA or better resolution.", WARNING );
+   exit;
+   endif;
+   
+end;
+
+function CheckSpaceRequirements(szDir)
+  number  nSizeRequired;
+begin
+   nSizeRequired = 0;
+   nSizeRequired = SIZE_REQ_PROGRAM;
+   // Check space on target drive.
+   bSpaceOk = TRUE;
+   if (GetDiskSpace( szDir ) < nSizeRequired) then
+      szMsg = "There is not enough space available on the disk\n" +
+      "'" + svMainDirectory + "' \n" +
+      "Please free up some space or change the target location\n" +
+      "to a different disk";
+   MessageBeep(0);
+   MessageBox( szMsg, WARNING );
+   bSpaceOk = FALSE;
+   endif;
+
+   return bSpaceOk;
+end;
+
+// Get the Windows program path from registry
+function GetProgDir()
+begin
+   RegDBSetDefaultRoot(HKEY_LOCAL_MACHINE);
+   if (RegDBGetKeyValueEx("\\SOFTWARE\\MICROSOFT\\Windows\\CurrentVersion",
+       "ProgramFilesDir",
+       nType,
+       APPBASE_DIR95,
+       nResult)<0) then APPBASE_DIR95 = TARGETDISK ^ "Program Files"; endif;
+   RegDBSetDefaultRoot(HKEY_CLASSES_ROOT);
+end;

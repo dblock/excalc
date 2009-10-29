@@ -1,0 +1,3 @@
+Expression Calculator Multithread
+(c) Vestris Inc. 1994-2001 All Rights Reserved
+http://www.vestris.com
