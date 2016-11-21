@@ -1,4 +1,4 @@
-Expressoin Calculator
+Expression Calculator
 =====================
 
 Vestris inc. Expression Calculator, circa 96'.
